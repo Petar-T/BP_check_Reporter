@@ -1,19 +1,20 @@
 ﻿# Specify the path to the folder and the search value
-$folder_path = "C:\Users\petartr\OneDrive - Microsoft\Desktop\Gov.SI\"
+$folder_path = 'D:\Powershell_Code\BP_Check_Files\Test'
 $file_extension = "*.rpt"
 $search_values = @("[INFORMATION", "[WARNING" )
 $excluded_values = @("Discontinued", "Deprecated" )
 $Results_file = $folder_path + "results.csv"
 
 
-
 $results = @()
+
+Write-Host $file_path 
 
 
 # Get all the text files in the folder
 $file_paths = Get-ChildItem -Path $folder_path -Filter $file_extension -Recurse
    
-
+Write-Host $file_paths.ToString() 
 
 # Loop through each file
 foreach ($file_path in $file_paths) {

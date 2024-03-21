@@ -3,7 +3,7 @@ $folder_path = 'D:\Powershell_Code\BP_Check_Files\Test'
 $file_extension = "*.rpt"
 $search_values = @("[INFORMATION", "[WARNING" )
 $excluded_values = @("Discontinued", "Deprecated" )
-$Results_file = $folder_path + "results.csv"
+$Results_file = $folder_path + "\results.csv"
 
 
 $results = @()

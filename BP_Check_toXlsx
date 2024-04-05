@@ -135,11 +135,33 @@ $results | Export-Csv -Path $Results_file -NoTypeInformation
 Write-Host Writing Results file to $Results_file  -ForegroundColor Yellow
 } 
 
+# thanks to https://vladdba.com/2023/01/17/save-execution-plan-files-powershell/
+function Format-XML {
+ [CmdletBinding()]
+ Param (
+        [Parameter(
+            ValueFromPipeline=$true,
+            Mandatory=$true)]
+            [string]$XMLInput
+            )
+ $XMLDoc = New-Object -TypeName System.Xml.XmlDocument
+ $XMLDoc.LoadXml($XMLInput)
+ $SW = New-Object System.IO.StringWriter
+ $Writer = New-Object System.Xml.XmlTextwriter($SW)
+ $Writer.Formatting = [System.XML.Formatting]::Indented
+ $XMLDoc.WriteContentTo($Writer)
+ $SW.ToString()
+  }
+
 $dataSource = 'localhost'
 $database = "MSDB"
 #$sqlcommand = "exec dbo.usp_bpcheck @diskfrag=0" #bypassing Pshell elevation error
-$sqlcommand = "exec dbo.usp_bpcheck" #bypassing Pshell elevation error
+$sqlcommand = "exec dbo.usp_bpcheck" 
 
+$planHeader = "Category
+Check
+query_plan"
+$ExtractPlans=$true
 
 $TimeGenerated=Get-Date -Format "ddMMyy_HHmm"
 $Fldr="Bp_check_" + $($TimeGenerated)
@@ -186,6 +208,7 @@ Finally
 
 $TableNum = 1
 
+<# code without plan extraction
 ForEach($table in $dataset.Tables)
 {
         $StrTableNum= $TableNum.ToString("000")
@@ -193,7 +216,45 @@ ForEach($table in $dataset.Tables)
 
         $TableNum ++
         #Write-Host "Test$StrTableNum.csv"
+}#>
+ForEach($table in $dataset.Tables)
+{
+        $StrTableNum= $TableNum.ToString("000")
+
+        $headerRow = $table.Rows[0].psobject.properties.name 
+        $headerRowText =  Out-String -InputObject $headerRow
+                
+        if (($headerRowText.Length  -gt 0 ) -and ($ExtractPlans -eq $true))
+        {
+                if ($headerRowText.Substring(0,27) -eq $planHeader )
+                {
+                    Write-Host "Table with Plan found! [$StrTableNum]" -ForegroundColor Yellow
+                        
+                        $TablefolderPath = "$WorkingFolder\Table$StrTableNum"  
+                        if (!(Test-Path $TablefolderPath -PathType Container)) 
+                            {
+                                New-Item -ItemType Directory -Force -Path $TablefolderPath | Out-Null
+                            }
+
+                    [int]$RowNum = 0
+                            
+                    foreach($row in $table)
+                        {
+                            [string]$SQLPlanFile = "Plan_$RowNum.sqlplan" 
+                            $table.Rows[$RowNum]["query_plan"] | Format-XML | Set-Content  -Path "$WorkingFolder\Table$StrTableNum\$($SQLPlanFile)" -Force
+                            $RowNum+=1
+                        }
+
+
+                } 
+        }
+
+        $table | Export-Csv -Path "$WorkingFolder\Test$StrTableNum.csv" -NoTypeInformation
+
+        $TableNum ++
+        #Write-Host "Test$StrTableNum.csv"
 }
+
 
 Get-ResultsFile -folder_path $WorkingFolder
 

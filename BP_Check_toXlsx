@@ -1,3 +1,19 @@
+$dataSource = 'localhost'
+
+function leftPlus {
+   [CmdletBinding()]
+ 
+   Param (
+      [String]$text,
+      [Int]$Length
+   )
+   #Return $text.SubString(0, [math]::min($Length,$text.length))
+   $Res=$text.SubString(0, [math]::min($Length,$text.length))
+   if ($Res.Substring($Res.Length - 1 , 1) -eq "'")  {$Res=$Res.Substring(0, $Res.Length - 1 )  }
+
+ Return $Res
+}
+
 function Cvs2Xls{
     param (
     [string] $FolderName,
@@ -10,11 +26,11 @@ function Cvs2Xls{
 cd $FolderName;
 
 $csvs = Get-ChildItem .\* -Include *.csv | Sort-Object Name
-$y=$csvs.Count
+$tabsCount=$csvs.Count
 
     $outputfilename =  "BP_Check_output_" + $TimeStamp + ".xlsx"
 
-    Write-Host "Creating: $outputfilename, total: $y tabs" -ForegroundColor Yellow
+    Write-Host "Creating: $outputfilename, total: $tabsCount tabs" -ForegroundColor Yellow
 
     $excelapp = new-object -comobject Excel.Application
     $excelapp.sheetsInNewWorkbook = $csvs.Count
@@ -26,8 +42,24 @@ $y=$csvs.Count
         $row=1
         $column=1
         $worksheet = $xlsx.Worksheets.Item($sheet)
-        $worksheet.Name = $csv.Name
-        $file = (Get-Content $csv)
+
+        $SheetName= LeftPlus $csv.Name -Length 29 #31
+
+        #Write-Host $csv.Name -ForegroundColor DarkYellow
+        #Write-Host $SheetName -ForegroundColor White
+        Try
+        {
+            $worksheet.Name = $SheetName
+        }
+        catch
+        {
+            Write-Host "  Error naming [$csv.Name]" -ForegroundColor Red
+            Write-Host "  process is moving on..." -ForegroundColor yellow
+
+
+        }
+
+        $file = (Get-Content -LiteralPath $csv)
         foreach($line in $file)
         {
             $linecontents=$line -split ',(?!\s*\w+")'
@@ -44,9 +76,30 @@ $y=$csvs.Count
     $sheet++
     }
 
-    #$output = $FolderName + "\" + $outputfilename
     $output = "$OutputFolder\$outputfilename" 
 
+    Write-Host "Creating index page!" -ForegroundColor Yellow
+
+    $IndexWorkSheet = $excelapp.worksheets.item(1)
+
+         for (($xlRow = 1); $xlRow -le $($tabsCount-2); $xlRow++)
+        {
+           
+           $xlText= $IndexWorkSheet.Cells.Item($xlRow,1).Text
+           $xlLink= $IndexWorkSheet.Cells.Item($xlRow,2).Text 
+           
+           $xlLink=  $xlLink.Replace("'","''")
+           $xlLink2 = "'$xlLink'!A1"
+
+
+          $IndexWorkSheet.Hyperlinks.Add($IndexWorkSheet.Cells.Item($xlRow,3), "", $xlLink2   ,$xlText,   $xlText) | Out-Null
+
+        }
+
+        $cols= $IndexWorkSheet.Columns
+        $cols.Item(1).hidden = $true
+        $cols.Item(2).hidden = $true
+        $cols.Item(3).columnWidth = 65
 
     
     $xlsx.SaveAs($output)
@@ -71,9 +124,8 @@ function Get-ResultsFile{
 
 $search_values = @("[INFORMATION", "[WARNING" )
 $excluded_values = @("Discontinued", "Deprecated" )
-#$ParentFolder = Split-Path -Parent $folder_path
-#$Results_file = $ParentFolder + "\_results.csv"
 $Results_file = $folder_path + "\_results.csv"
+$List_file = $folder_path + "\_list.csv"
 
 Write-Host Analyzing : $folder_path  -ForegroundColor Yellow
 
@@ -87,7 +139,11 @@ $file_paths = Get-ChildItem -Path $folder_path -Filter *.csv
 foreach ($file_path in $file_paths) {
     # Open the file
     #Write-Host $file_path.FullName  -ForegroundColor Yellow
-    $file_content = Get-Content $file_path.FullName
+
+    $LinkCol=LeftPlus -text $($file_path)  -Length 29
+    Add-Content -Path $List_file -Value "$file_path,$LinkCol"
+
+    $file_content = Get-Content -LiteralPath $file_path.FullName
 
     # Loop through each line in the file
     foreach ($line in $file_content) {
@@ -153,15 +209,90 @@ function Format-XML {
  $SW.ToString()
   }
 
-$dataSource = 'localhost'
+function TableHandler 
+{
+Param( 
+    $tbl,
+    [string]$TableName,
+    [bool]$ExtractPlans 
+    )
+        Try
+        {
+
+         $headerRow = $tbl.Rows[0].psobject.properties.name 
+         $headerRowText =  Out-String -InputObject $headerRow
+
+         $Column1_Name=$headerRow[0]
+         $Column2_Name=$headerRow[1]
+
+         #$tbl.Rows[1].$($Column1_Name)
+         #$tbl.Rows[1].$($Column2_Name)
+
+         $A=Out-String -InputObject $tbl.Rows[0].$($Column1_Name)
+         $B=Out-String -InputObject $tbl.Rows[0].$($Column2_Name)
+
+         $NewTableName=$("'$A'$B'").Replace("`r`n","")
+        }
+        catch {}
+
+
+            if (($NewTableName.Length -eq 0 ) -or ($NewTableName.Length -gt 80))
+            {
+                #$TableName = "Table$StrTableNum"}
+                $TableName = "$StrTableNum"}
+            else 
+            {
+                #$TableName= "Table$StrTableNum$NewTableName"}
+                $TableName= "$StrTableNum$NewTableName"}
+
+
+        if (($headerRowText.Length  -gt 0 ) -and ($ExtractPlans -eq $true))
+        {
+                $hasPlans = $false
+                foreach ($ColName in $headerRow)
+                    { 
+                        if ($ColName -eq "query_plan") {$hasPlans = $true } # Write-Host "FOUND" -ForegroundColor Cyan }
+                    }
+                if ( $hasPlans -eq $true)
+                {
+
+                    Write-Host "Table with Plan found! [$StrTableNum]" -ForegroundColor Yellow
+                        
+                        $TablefolderPath = "$WorkingFolder\Table$StrTableNum"  
+                        if (!(Test-Path $TablefolderPath -PathType Container)) 
+                            {
+                                New-Item -ItemType Directory -Force -Path $TablefolderPath | Out-Null
+                            }
+
+                    [int]$RowNum = 0
+                            
+                    foreach($row in $table)
+                        {
+                            [string]$SQLPlanFile = "Plan_$RowNum.sqlplan" 
+                            $table.Rows[$RowNum]["query_plan"] | Format-XML | Set-Content  -Path "$WorkingFolder\Table$StrTableNum\$($SQLPlanFile)" -Force
+                            $RowNum+=1
+                        }
+
+
+                } 
+        }
+
+       return $TableName
+
+}
+
+
+function BP_check_2Xlsx
+{
+Param( 
+    $tbl,
+    [string]$dataSource,
+    [bool]$ExtractPlans 
+    )
+
 $database = "MSDB"
 #$sqlcommand = "exec dbo.usp_bpcheck @diskfrag=0" #bypassing Pshell elevation error
 $sqlcommand = "exec dbo.usp_bpcheck" 
-
-$planHeader = "Category
-Check
-query_plan"
-$ExtractPlans=$true
 
 $TimeGenerated=Get-Date -Format "ddMMyy_HHmm"
 $Fldr="Bp_check_" + $($TimeGenerated)
@@ -195,7 +326,7 @@ try{
         #$connection.Close()
     $elapsedTime = NEW-TIMESPAN -Start $StartTime -End $(get-date)
     $elapsedTimeStr = '{0:00}:{1:00}' -f $elapsedTime.Minutes, $elapsedTime.Seconds
-    Write-Host $("Elapsed Time : [$elapsedTimeSt]") -ForegroundColor White
+    Write-Host $("Connection Elapsed Time : [$elapsedTimeStr]") -ForegroundColor White
 
     }
 catch{
@@ -208,48 +339,14 @@ Finally
 
 $TableNum = 1
 
-<# code without plan extraction
-ForEach($table in $dataset.Tables)
-{
-        $StrTableNum= $TableNum.ToString("000")
-        $table | Export-Csv -Path "$WorkingFolder\Test$StrTableNum.csv" -NoTypeInformation
-
-        $TableNum ++
-        #Write-Host "Test$StrTableNum.csv"
-}#>
 ForEach($table in $dataset.Tables)
 {
         $StrTableNum= $TableNum.ToString("000")
 
-        $headerRow = $table.Rows[0].psobject.properties.name 
-        $headerRowText =  Out-String -InputObject $headerRow
-                
-        if (($headerRowText.Length  -gt 0 ) -and ($ExtractPlans -eq $true))
-        {
-                if ($headerRowText.Substring(0,27) -eq $planHeader )
-                {
-                    Write-Host "Table with Plan found! [$StrTableNum]" -ForegroundColor Yellow
-                        
-                        $TablefolderPath = "$WorkingFolder\Table$StrTableNum"  
-                        if (!(Test-Path $TablefolderPath -PathType Container)) 
-                            {
-                                New-Item -ItemType Directory -Force -Path $TablefolderPath | Out-Null
-                            }
-
-                    [int]$RowNum = 0
-                            
-                    foreach($row in $table)
-                        {
-                            [string]$SQLPlanFile = "Plan_$RowNum.sqlplan" 
-                            $table.Rows[$RowNum]["query_plan"] | Format-XML | Set-Content  -Path "$WorkingFolder\Table$StrTableNum\$($SQLPlanFile)" -Force
-                            $RowNum+=1
-                        }
-
-
-                } 
-        }
-
-        $table | Export-Csv -Path "$WorkingFolder\Test$StrTableNum.csv" -NoTypeInformation
+        $T=TableHandler -tbl $table -TableName $StrTableNum -ExtractPlans $true
+        
+        #$table | Export-Csv -Path "$WorkingFolder\Table$StrTableNum.csv" -NoTypeInformation
+        $table | Export-Csv -LiteralPath "$WorkingFolder\$T.csv" -NoTypeInformation
 
         $TableNum ++
         #Write-Host "Test$StrTableNum.csv"
@@ -260,4 +357,13 @@ Get-ResultsFile -folder_path $WorkingFolder
 
 Cvs2Xls -FolderName $WorkingFolder -TimeStamp $TimeGenerated -OutputFolder $WorkingFolder -CompressContents $true
 
+    $elapsedTimeTotal = NEW-TIMESPAN -Start $StartTime -End $(get-date)
+    $elapsedTimeStr2 = '{0:00}:{1:00}' -f $elapsedTimeTotal.Minutes, $elapsedTimeTotal.Seconds
+    Write-Host $("Total elapsed Time : [$elapsedTimeStr2]") -ForegroundColor White
+
 ii .
+}
+
+
+
+BP_check_2Xlsx -dataSource $dataSource -ExtractPlans $true

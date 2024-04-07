@@ -1,4 +1,4 @@
-$dataSource = 'localhost'
+$dataSource = 'localhost' #only parameter needed :)
 
 function leftPlus {
    [CmdletBinding()]

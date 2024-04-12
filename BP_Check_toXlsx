@@ -1,12 +1,26 @@
+if (Get-Module -ListAvailable -Name ImportExcel) {
+    Write-Host "Module exists"
+} 
+else {
+    Write-Host "Module [ImportExcel] does not exist, you need to install it in order to properly run this script" -ForegroundColor Red
+    Write-Host "You should : " -ForegroundColor Yellow
+    Write-Host "    Install-Module -Name ImportExcel " -ForegroundColor Yellow
+    Write-Host "    manually download file from [https://www.powershellgallery.com/packages/ImportExcel/] " -ForegroundColor Yellow
+
+    Exit
+}
+
 $dataSource = 'localhost' #only parameter needed :)
 
-function leftPlus {
+#function used to calculate shorten Excel Tab name
+function get-TabName {
    [CmdletBinding()]
- 
-   Param (
+    Param (
       [String]$text,
       [Int]$Length
    )
+   
+   $text=$text.Replace(".csv","")
    #Return $text.SubString(0, [math]::min($Length,$text.length))
    $Res=$text.SubString(0, [math]::min($Length,$text.length))
    if ($Res.Substring($Res.Length - 1 , 1) -eq "'")  {$Res=$Res.Substring(0, $Res.Length - 1 )  }
@@ -14,103 +28,99 @@ function leftPlus {
  Return $Res
 }
 
-function Cvs2Xls{
+function Cvs2Xls2{
     param (
     [string] $FolderName,
     [string] $TimeStamp,
-    [string] $OutputFolder,
-    [bool] $CompressContents = $true
+    [string] $OutputFolder    
     ) 
 
+    cd $FolderName;
 
-cd $FolderName;
-
-$csvs = Get-ChildItem .\* -Include *.csv | Sort-Object Name
-$tabsCount=$csvs.Count
-
+    $csvs = Get-ChildItem .\* -Include *.csv | Sort-Object Name
+    $tabsCount=$csvs.Count
     $outputfilename =  "BP_Check_output_" + $TimeStamp + ".xlsx"
+    $outputExcel = "$OutputFolder\$outputfilename" 
 
     Write-Host "Creating: $outputfilename, total: $tabsCount tabs" -ForegroundColor Yellow
 
-    $excelapp = new-object -comobject Excel.Application
-    $excelapp.sheetsInNewWorkbook = $csvs.Count
-    $xlsx = $excelapp.Workbooks.Add()
-    $sheet=1
-
+    $prog = 0
     foreach ($csv in $csvs)
     {
-        $row=1
-        $column=1
-        $worksheet = $xlsx.Worksheets.Item($sheet)
+ 
+        $SheetName= get-TabName $csv.Name -Length 29 #31
 
-        $SheetName= LeftPlus $csv.Name -Length 29 #31
 
-        #Write-Host $csv.Name -ForegroundColor DarkYellow
-        #Write-Host $SheetName -ForegroundColor White
-        Try
+         #Write-Host  "Adding $csv.Name" -ForegroundColor Green
+         $Perc= [Math]::Floor(100*$prog/190)
+         Write-Progress -Activity "Adding tabs to Excel in progress" -Status "$Perc% Complete:" -PercentComplete $Perc
+
+
+         Import-Csv -Path $csv | Export-Excel -Path $outputExcel -WorkSheetname $SheetName 
+         $prog++
+     }
+
+     Write-Host "Creating index page!" -ForegroundColor Yellow
+
+     $ExcelData = Open-ExcelPackage -Path $outputExcel
+     $TabData= $ExcelData.Workbook.WorkSheets["_list"].Cells
+
+
+     For ([int] $row =2 ; $row -lt $tabsCount ; $Row++)
         {
-            $worksheet.Name = $SheetName
-        }
-        catch
-        {
-            Write-Host "  Error naming [$csv.Name]" -ForegroundColor Red
-            Write-Host "  process is moving on..." -ForegroundColor yellow
+            $For1=$TabData[$Row,1].Value
+            $xlLink = $TabData[$Row,2].Value
+            Try {
+                $xlLink=  $xlLink.Replace("'","''")
+            }Catch { } # I could not care more gor these tabs !! :)
+            $for2 = "'$xlLink'!A1"
 
-
-        }
-
-        $file = (Get-Content -LiteralPath $csv)
-        foreach($line in $file)
-        {
-            $linecontents=$line -split ',(?!\s*\w+")'
-            foreach($cell in $linecontents)
-            {
-                $cell=$cell.TrimStart('"')
-                $cell=$cell.TrimEnd('"')
-                $worksheet.Cells.Item($row,$column) = $cell
-                $column++
-            }
-        $column=1
-        $row++
-        }
-    $sheet++
-    }
-
-    $output = "$OutputFolder\$outputfilename" 
-
-    Write-Host "Creating index page!" -ForegroundColor Yellow
-
-    $IndexWorkSheet = $excelapp.worksheets.item(1)
-
-         for (($xlRow = 1); $xlRow -le $($tabsCount-2); $xlRow++)
-        {
-           
-           $xlText= $IndexWorkSheet.Cells.Item($xlRow,1).Text
-           $xlLink= $IndexWorkSheet.Cells.Item($xlRow,2).Text 
-           
-           $xlLink=  $xlLink.Replace("'","''")
-           $xlLink2 = "'$xlLink'!A1"
-
-
-          $IndexWorkSheet.Hyperlinks.Add($IndexWorkSheet.Cells.Item($xlRow,3), "", $xlLink2   ,$xlText,   $xlText) | Out-Null
-
+            $Formula = "=Hyperlink(`"#$For2`" ,`"$For1`")"
+            $TabData[$Row,3].Formula = $Formula
         }
 
-        $cols= $IndexWorkSheet.Columns
-        $cols.Item(1).hidden = $true
-        $cols.Item(2).hidden = $true
-        $cols.Item(3).columnWidth = 65
+        $Ws= $ExcelData.Workbook.WorkSheets["_list"]
+        $Ws.Column(1).Width = 0
+        $Ws.Column(2).Width = 0
+        $Ws.Column(3).Width = 60
 
-    
-    $xlsx.SaveAs($output)
-    $excelapp.quit()
+
+        $Ws= $ExcelData.Workbook.WorkSheets["_results"]
+        $Ws.Column(1).Width = 44
+        $Ws.Column(2).Width = 20
+        $Ws.Column(3).Width = 25
+        $Ws.Column(4).Width = 25
+        $Ws.Column(5).Width = 60
+
+        #make hypelink to _link tab  
+        foreach ($xlTab in $ExcelData.Workbook.WorkSheets)
+        {
+            $TabData=$xlTab.Cells 
+            $TabData[1,1].Formula = "=Hyperlink(`"#_List!A1`" ,`"<-`")"
+        
+        }
+         
+
      
-    if ($CompressContents)
+    Close-ExcelPackage $ExcelData -SaveAs "$OutputFolder\BP_Check_Final.xlsx"
+}
+
+function Compress-SourceFiles{
+param (
+    [string] $FolderName,
+    [bool] $CompressFiles,
+    [Bool] $CompressPlans)
+    
+    cd $FolderName;
+
+    $csvs = Get-ChildItem .\* -Include *.csv | Sort-Object Name
+
+    if ($CompressFiles -eq $true)
     {
-     Write-Host "Zipping individual files into archive $OutputFolder\CvsArchive.zip" -ForegroundColor Yellow
+     Write-Host "Zipping individual files into archive $FolderName\CvsArchive.zip" -ForegroundColor Yellow
      foreach ($csv in $csvs)
      {
-        Compress-Archive -Path $csv -DestinationPath "$OutputFolder\CvsArchive.zip" -Update
+        Compress-Archive -Path $csv -DestinationPath "$FolderName\CvsArchive.zip" -Update
         Remove-Item -Path $csv
      }
     
@@ -133,14 +143,14 @@ $results = @()
 
 $file_paths = Get-ChildItem -Path $folder_path -Filter *.csv 
    
-
+   Add-Content -Path $List_file -Value "Name,Link"
 
 # Loop through each file
 foreach ($file_path in $file_paths) {
     # Open the file
     #Write-Host $file_path.FullName  -ForegroundColor Yellow
 
-    $LinkCol=LeftPlus -text $($file_path)  -Length 29
+    $LinkCol=get-TabName -text $($file_path)  -Length 29
     Add-Content -Path $List_file -Value "$file_path,$LinkCol"
 
     $file_content = Get-Content -LiteralPath $file_path.FullName
@@ -185,14 +195,17 @@ foreach ($file_path in $file_paths) {
         }
 
     }
+
+     
 }
 
 $results | Export-Csv -Path $Results_file -NoTypeInformation
+Set-Content -LiteralPath $Results_file -Value ((Get-Content -LiteralPath $Results_file) -replace '"')
 Write-Host Writing Results file to $Results_file  -ForegroundColor Yellow
 } 
 
-# thanks to https://vladdba.com/2023/01/17/save-execution-plan-files-powershell/
 function Format-XML {
+# thanks to https://vladdba.com/2023/01/17/save-execution-plan-files-powershell/
  [CmdletBinding()]
  Param (
         [Parameter(
@@ -281,8 +294,7 @@ Param(
 
 }
 
-
-function BP_check_2Xlsx
+function BP_check_2Xlsx_Main
 {
 Param( 
     $tbl,
@@ -346,7 +358,10 @@ ForEach($table in $dataset.Tables)
         $T=TableHandler -tbl $table -TableName $StrTableNum -ExtractPlans $true
         
         #$table | Export-Csv -Path "$WorkingFolder\Table$StrTableNum.csv" -NoTypeInformation
-        $table | Export-Csv -LiteralPath "$WorkingFolder\$T.csv" -NoTypeInformation
+        $table | Export-Csv -LiteralPath "$WorkingFolder\$T.csv"  -NoTypeInformation
+
+        Set-Content -LiteralPath "$WorkingFolder\$T.csv" -Value ((Get-Content -LiteralPath "$WorkingFolder\$T.csv") -replace '"')
+
 
         $TableNum ++
         #Write-Host "Test$StrTableNum.csv"
@@ -355,7 +370,8 @@ ForEach($table in $dataset.Tables)
 
 Get-ResultsFile -folder_path $WorkingFolder
 
-Cvs2Xls -FolderName $WorkingFolder -TimeStamp $TimeGenerated -OutputFolder $WorkingFolder -CompressContents $true
+Cvs2Xls2 -FolderName $WorkingFolder -TimeStamp $TimeGenerated -OutputFolder $WorkingFolder 
+Compress-SourceFiles -FolderName $WorkingFolder -CompressFiles $true
 
     $elapsedTimeTotal = NEW-TIMESPAN -Start $StartTime -End $(get-date)
     $elapsedTimeStr2 = '{0:00}:{1:00}' -f $elapsedTimeTotal.Minutes, $elapsedTimeTotal.Seconds
@@ -366,4 +382,4 @@ ii .
 
 
 
-BP_check_2Xlsx -dataSource $dataSource -ExtractPlans $true
+BP_check_2Xlsx_Main -dataSource $dataSource -ExtractPlans $true

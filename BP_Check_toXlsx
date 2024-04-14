@@ -294,7 +294,7 @@ Param(
 
 }
 
-function BP_check_2Xlsx_Main
+function BP_check-ToExcel-Main
 {
 Param( 
     $tbl,
@@ -382,4 +382,4 @@ ii .
 
 
 
-BP_check_2Xlsx_Main -dataSource $dataSource -ExtractPlans $true
+BP_check-ToExcel-Main -dataSource $dataSource -ExtractPlans $true

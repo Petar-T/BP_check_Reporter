@@ -28,7 +28,7 @@ function get-TabName {
  Return $Res
 }
 
-function Cvs2Xls2{
+function Cvs-ToExcel{
     param (
     [string] $FolderName,
     [string] $TimeStamp,
@@ -370,7 +370,7 @@ ForEach($table in $dataset.Tables)
 
 Get-ResultsFile -folder_path $WorkingFolder
 
-Cvs2Xls2 -FolderName $WorkingFolder -TimeStamp $TimeGenerated -OutputFolder $WorkingFolder 
+Cvs-ToExcel -FolderName $WorkingFolder -TimeStamp $TimeGenerated -OutputFolder $WorkingFolder 
 Compress-SourceFiles -FolderName $WorkingFolder -CompressFiles $true
 
     $elapsedTimeTotal = NEW-TIMESPAN -Start $StartTime -End $(get-date)

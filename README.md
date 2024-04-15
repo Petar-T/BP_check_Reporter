@@ -15,6 +15,6 @@
 Run Poweshell script , it will create results.csv, change source on PowerBI file , that is it!
 
 <BR>
-![image](https://github.com/Petar-T/BP_check_Reporter/assets/47648550/506eb4a0-c2fb-4503-9705-2d8ad039e755?raw=true "Image 01")
+![image](https://github.com/Petar-T/BP_check_Reporter/assets/47648550/506eb4a0-c2fb-4503-9705-2d8ad039e755)
 <BR>
 ![PowerBI demo page](https://github.com/Petar-T/BP_check_Reporter/assets/47648550/4651cd60-29be-48e0-bab0-499157b4732c)

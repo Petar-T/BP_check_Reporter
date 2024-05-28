@@ -10,7 +10,8 @@ else {
     Exit
 }
 
-$dataSource = 'localhost' #only parameter needed :)
+$dataSource = 'localhost'                                #only parameter needed, if SQL MI is target use <MI_Name.database.windows.net>
+$subscriptionID= '<SubscriptionID>'                      #needed if SQL MI is target
 
 #function used to calculate shorten Excel Tab name
 function get-TabName {
@@ -313,8 +314,23 @@ $WorkingFolder = New-Item -Path  $env:TEMP -ItemType Directory -Name $Fldr
 Write-Host "creating individual .cvs files in $WorkingFolder" -ForegroundColor Yellow
 
 try{
-    $connectionString = "Data Source=$dataSource; Integrated Security=True;Application Name=BP_Check PS runner ; Initial Catalog=$database"
-    $connection = new-object system.data.SqlClient.SQLConnection($connectionString)
+    if ($dataSource -notmatch '.database.windows.net$')
+    { 
+        $connectionString = "Data Source=$dataSource; Integrated Security=True;Application Name=BP_Check PS runner;Initial Catalog=$database"
+        $connection = new-object system.data.SqlClient.SQLConnection($connectionString)
+    }
+    else
+    {
+        Connect-AzAccount -SubscriptionID $subscriptionID | Out-Null
+        $connectionString = "Server=$dataSource;Initial Catalog=MSDB;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;Application Name=BP_Check PS runner"
+        $accessToken = (Get-AzAccessToken -ResourceUrl https://database.windows.net).Token
+
+        $connection = new-object system.data.SqlClient.SQLConnection($connectionString)
+        $connection.AccessToken = $accessToken
+    }
+
+    #$connectionString = "Data Source=$dataSource; Integrated Security=True;Application Name=BP_Check PS runner ; Initial Catalog=$database"
+    #$connection = new-object system.data.SqlClient.SQLConnection($connectionString)
     $command = new-object system.data.sqlclient.sqlcommand($sqlCommand,$connection) 
     $command.CommandTimeout = 3600
 
